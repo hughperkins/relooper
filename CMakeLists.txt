@@ -13,7 +13,7 @@ set (LLVM_LIBS /usr/lib/llvm-3.8/lib/libLLVM.so)
 
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-rpath,$ORIGIN")
 
-add_library(relooper SHARED Relooper.cpp)
+add_library(relooper SHARED src/Relooper.cpp)
 target_include_directories(relooper PRIVATE /usr/lib/llvm-3.8/include)
 set_target_properties(relooper PROPERTIES
     LINK_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${LLVM_LDFLAGS}"
@@ -23,7 +23,7 @@ target_link_libraries(relooper "${LLVM_LIBS}")
 if(BUILD_TESTS)
     add_executable(test1 test/test1.cpp third_party/argparsecpp/argparsecpp.cpp)
     target_include_directories(test1 PRIVATE third_party/argparsecpp)
-    target_include_directories(test1 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_include_directories(test1 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_include_directories(test1 PRIVATE /usr/lib/llvm-3.8/include)
     target_link_libraries(test1 relooper)
 endif()
