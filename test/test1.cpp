@@ -15,10 +15,12 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/IR/CFG.h"
+#include "llvm/Support/SourceMgr.h"
 
 #include <iostream>
 #include <memory>
 using namespace std;
+using namespace llvm;
 
 int main(int argc, char *argv[]) {
     string inputfile;
@@ -28,6 +30,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    llvm::LLVMContext context;
     SMDiagnostic smDiagnostic;
     std::unique_ptr<llvm::Module> M = parseIRFile(inputfile, smDiagnostic, context);
     if(!M) {
@@ -35,7 +38,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    FunctionPass *llvm::createWebAssemblyRelooper();
+    FunctionPass *relooper_pass = llvm::createWebAssemblyRelooper();
 
     return 0;
 }

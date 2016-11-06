@@ -21,7 +21,7 @@ set_target_properties(relooper PROPERTIES
 target_link_libraries(relooper "${LLVM_LIBS}")
 
 if(BUILD_TESTS)
-    add_executable(test1 test/test1.cpp)
+    add_executable(test1 test/test1.cpp third_party/argparsecpp/argparsecpp.cpp)
     target_include_directories(test1 PRIVATE third_party/argparsecpp)
     target_include_directories(test1 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_include_directories(test1 PRIVATE /usr/lib/llvm-3.8/include)
