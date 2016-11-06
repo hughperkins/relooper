@@ -16,6 +16,7 @@
 
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetVector.h"
+#include "llvm/IR/Instruction.h"
 #include "llvm/Support/Casting.h"
 
 #include <cassert>
@@ -27,6 +28,7 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <vector>
 
 namespace llvm {
 
@@ -61,11 +63,11 @@ struct Branch {
                          // One of the conditions should have nullptr as the
                          // condition, in which case it is the default
                          // FIXME: move from char* to LLVM data structures
-  const char *Code; // If provided, code that is run right before the branch is
+ std::vector<const llvm::Instruction*> Code; // If provided, code that is run right before the branch is
                     // taken. This is useful for phis
                     // FIXME: move from char* to LLVM data structures
 
-  Branch(const char *ConditionInit, const char *CodeInit = nullptr);
+  Branch(const char *ConditionInit, const std::vector<const llvm::Instruction*> *CodeInit = nullptr);
   ~Branch();
 };
 
@@ -91,20 +93,23 @@ struct Block {
   int Id; // A unique identifier, defined when added to relooper. Note that this
           // uniquely identifies a *logical* block - if we split it, the two
           // instances have the same content *and* the same Id
-  const char *Code;      // The string representation of the code in this block.
-                         // Owning pointer (we copy the input)
-                         // FIXME: move from char* to LLVM data structures
-  const char *BranchVar; // A variable whose value determines where we go; if
-                         // this is not nullptr, emit a switch on that variable
-                         // FIXME: move from char* to LLVM data structures
+  std::string name;
+  std::vector<const llvm::Instruction*> Code;
+  // const char *Code;      // The string representation of the code in this block.
+  //                        // Owning pointer (we copy the input)
+  //                        // FIXME: move from char* to LLVM data structures
+  std::vector<llvm::BasicBlock *> BranchVar;
+  // const char *BranchVar; // A variable whose value determines where we go; if
+  //                        // this is not nullptr, emit a switch on that variable
+  //                        // FIXME: move from char* to LLVM data structures
   bool IsCheckedMultipleEntry; // If true, we are a multiple entry, so reaching
                                // us requires setting the label variable
 
-  Block(const char *CodeInit, const char *BranchVarInit);
+  Block(std::string name);
   ~Block();
 
   void AddBranchTo(Block *Target, const char *Condition,
-                   const char *Code = nullptr);
+                   const std::vector<const llvm::Instruction*> *Code = nullptr);
 };
 
 ///

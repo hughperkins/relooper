@@ -36,11 +36,13 @@
 #include <list>
 #include <stack>
 #include <string>
+#include <sstream>
 
 #define DEBUG_TYPE "relooper"
 
 using namespace llvm;
 using namespace Relooper;
+using namespace std;
 
 static cl::opt<int> RelooperSplittingFactor(
     "relooper-splitting-factor",
@@ -63,6 +65,14 @@ static cl::opt<unsigned> RelooperNestingLimit(
 
 
 namespace {
+
+template<typename T>
+std::string toString(T val) {
+  std::ostringstream oss;
+  oss << val;
+  return oss.str();
+}
+
 ///
 /// Implements the relooper algorithm for a function's blocks.
 ///
@@ -100,6 +110,13 @@ struct RelooperAnalysis final : public FunctionPass {
 };
 }
 
+int HughsBlockId = 0;
+std::string getNewBlockname() {
+  std::string name = "v" + toString(HughsBlockId);
+  HughsBlockId++;
+  return name;
+}
+
 // RelooperAnalysis
 
 char RelooperAnalysis::ID = 0;
@@ -116,7 +133,22 @@ bool RelooperAnalysis::runOnFunction(Function &F) {
   for (const BasicBlock &BB : F) {
     // FIXME: getName is wrong here, Code is meant to represent amount of code.
     // FIXME: use BranchVarInit for switch.
-    Block *B = new Block(BB.getName().str().data(), /*BranchVarInit=*/nullptr);
+    std::string name = BB.getName().str();
+    if(name == "") {
+       name = "v" + toString(HughsBlockId);
+       HughsBlockId++;
+     }
+    DEBUG(dbgs() << "name data: [" << BB.getName().data() << "]\n");
+    Block *B = new Block(name);
+    for(auto it=BB.begin(); it != BB.end(); it++) {
+      const Instruction *inst = &*it;
+      // if(isa<BranchInst>(inst)) {
+        B->Code.push_back(inst);
+      // } elses {
+      //   B->Code.push_back(inst);
+      // }
+    }
+    DEBUG(dbgs() << "   block " << name << "\n");
     R.AddBlock(B);
     assert(BB2B.find(&BB) == BB2B.end() && "Inserting the same block twice");
     assert(B2BB.find(B) == B2BB.end() && "Inserting the same block twice");
@@ -125,9 +157,12 @@ bool RelooperAnalysis::runOnFunction(Function &F) {
   }
   for (Block *B : R.Blocks) {
     const BasicBlock *BB = B2BB[B];
-    for (const BasicBlock *Successor : successors(BB))
+    DEBUG(dbgs() << "adding successors for " << B->name << "\n");
+    for (const BasicBlock *Successor : successors(BB)) {
       // FIXME: add branch's Condition and Code below.
+      DEBUG(dbgs() << "  got successor " << "\n");
       B->AddBranchTo(BB2B[Successor], /*Condition=*/nullptr, /*Code=*/nullptr);
+    }
   }
   R.Calculate(BB2B[&F.getEntryBlock()]);
   return false; // Analysis passes don't modify anything.
@@ -146,36 +181,40 @@ static bool contains(const T &container, const U &contained) {
 
 // Branch
 
-Branch::Branch(const char *ConditionInit, const char *CodeInit)
+Branch::Branch(const char *ConditionInit, const std::vector<const llvm::Instruction*>  *CodeInit)
     : Ancestor(nullptr), Labeled(true) {
   // FIXME: move from char* to LLVM data structures
   Condition = ConditionInit ? strdup(ConditionInit) : nullptr;
-  Code = CodeInit ? strdup(CodeInit) : nullptr;
+  // Code = CodeInit ? strdup(CodeInit) : nullptr;
+  if(CodeInit != 0) {
+    Code = *CodeInit;
+  }
 }
 
 Branch::~Branch() {
   // FIXME: move from char* to LLVM data structures
-  free(static_cast<void *>(const_cast<char *>(Condition)));
-  free(static_cast<void *>(const_cast<char *>(Code)));
+  // free(static_cast<void *>(const_cast<char *>(Condition)));
+  // free(static_cast<void *>(const_cast<char *>(Code)));
 }
 
 // Block
 
-Block::Block(const char *CodeInit, const char *BranchVarInit)
+Block::Block(std::string name)
     : Parent(nullptr), Id(-1), IsCheckedMultipleEntry(false) {
+    this->name = name;
   // FIXME: move from char* to LLVM data structures
-  Code = strdup(CodeInit);
-  BranchVar = BranchVarInit ? strdup(BranchVarInit) : nullptr;
+  // Code = strdup(CodeInit);
+  // BranchVar = BranchVarInit ? strdup(BranchVarInit) : nullptr;
 }
 
 Block::~Block() {
   // FIXME: move from char* to LLVM data structures
-  free(static_cast<void *>(const_cast<char *>(Code)));
-  free(static_cast<void *>(const_cast<char *>(BranchVar)));
+  // free(static_cast<void *>(const_cast<char *>(Code)));
+  // free(static_cast<void *>(const_cast<char *>(BranchVar)));
 }
 
 void Block::AddBranchTo(Block *Target, const char *Condition,
-                        const char *Code) {
+                        const std::vector<const llvm::Instruction*> *Code) {
   assert(!contains(BranchesOut, Target) &&
          "cannot add more than one branch to the same target");
 
@@ -207,7 +246,7 @@ struct RelooperRecursor {
 };
 
 void RelooperAlgorithm::Calculate(Block *Entry) {
-
+  DEBUG(dbgs() << "  RelooperAlgorithm::CalculateBlock Entry=" << Entry->name << "\n");
 
   // Scan and optimize the input
   struct PreOptimizer : public RelooperRecursor {
@@ -236,36 +275,42 @@ void RelooperAlgorithm::Calculate(Block *Entry) {
     void SplitDeadEnds() {
       unsigned TotalCodeSize = 0;
       for (const auto &Curr : Live) {
-        TotalCodeSize += strlen(Curr->Code);
+        TotalCodeSize += Curr->Code.size();
       }
+      DEBUG(dbgs() << "totalCodeSize " << TotalCodeSize << "\n");
       BlockSet Splits;
       BlockSet Removed;
       for (const auto &Original : Live) {
+        DEBUG(dbgs() << "original " << Original->name << "\n");
         if (Original->BranchesIn.size() <= 1 ||
             !Original->BranchesOut.empty())
           continue; // only dead ends, for now
         if (contains(Original->BranchesOut, Original))
           continue; // cannot split a looping node
-        if (strlen(Original->Code) * (Original->BranchesIn.size() - 1) >
+        // if (strlen(Original->Code) * (Original->BranchesIn.size() - 1) >
+        if (Original->Code.size() * (Original->BranchesIn.size() - 1) >
             TotalCodeSize / RelooperSplittingFactor)
           continue; // if splitting increases raw code size by a significant
                     // amount, abort
         // Split the node (for simplicity, we replace all the blocks, even
         // though we could have reused the original)
-        DEBUG(dbgs() << "  Splitting '" << Original->Code << "'\n");
+        DEBUG(dbgs() << "  Splitting '" << Original->name << "'\n");
         for (const auto &Prior : Original->BranchesIn) {
-          Block *Split = new Block(Original->Code, Original->BranchVar);
+          // Block *Split = new Block(Original->Code, Original->BranchVar);
+          Block *Split = new Block(getNewBlockname());
+          Split->Code.assign(Original->Code.begin(), Original->Code.end());
+          Split->BranchVar.assign(Original->BranchVar.begin(), Original->BranchVar.end());
           Parent->AddBlock(Split, Original->Id);
           Split->BranchesIn.insert(Prior);
           std::unique_ptr<Branch> Details;
           Details.swap(Prior->BranchesOut[Original]);
           Prior->BranchesOut[Split] = make_unique<Branch>(Details->Condition,
-                                                          Details->Code);
+                                                          &Details->Code);
           for (const auto &iter : Original->BranchesOut) {
             Block *Post = iter.first;
             Branch *Details = iter.second.get();
             Split->BranchesOut[Post] = make_unique<Branch>(Details->Condition,
-                                                           Details->Code);
+                                                           &Details->Code);
             Post->BranchesIn.insert(Split);
           }
           Splits.insert(Split);
@@ -286,16 +331,25 @@ void RelooperAlgorithm::Calculate(Block *Entry) {
   Pre.FindLive(Entry);
 
   // Add incoming branches from live blocks, ignoring dead code
+  DEBUG(dbgs() << "adding incoming branches from live blocks" << "\n");
   for (unsigned i = 0; i < Blocks.size(); i++) {
     Block *Curr = Blocks[i];
-    if (!contains(Pre.Live, Curr))
+    DEBUG(dbgs() << "considering Curr block " << Curr->name << "\n");
+    if (!contains(Pre.Live, Curr)) {
+      DEBUG(dbgs() << "  Pre.Live doesnt contain " << Curr->name << "\n");
       continue;
-    for (const auto &iter : Curr->BranchesOut)
+    }
+    for (const auto &iter : Curr->BranchesOut) {
+      Block *branchOut = iter.first;
+      DEBUG(dbgs() << "  ...inserting " << Curr->name << " into branchesIn of its branchout, " << branchOut->name << "\n");
       iter.first->BranchesIn.insert(Curr);
+    }
   }
 
-  if (!MinSize)
+  if (!MinSize) {
+    DEBUG(dbgs() << "calling Pre.SplitDeadEnds()" << "\n");
     Pre.SplitDeadEnds();
+  }
 
   // Recursively process the graph
 
@@ -304,6 +358,7 @@ void RelooperAlgorithm::Calculate(Block *Entry) {
 
     // Add a shape to the list of shapes in this Relooper calculation
     void Notice(Shape *New) {
+      DEBUG(dbgs() << "Analyzer::Notice" << "\n");
       New->Id = Parent->ShapeIdCounter++;
       Parent->Shapes.push_back(New);
     }
@@ -320,7 +375,7 @@ void RelooperAlgorithm::Calculate(Block *Entry) {
     // Converts/processes all branchings to a specific target
     void Solipsize(Block *Target, Branch::FlowType Type, Shape *Ancestor,
                    BlockSet &From) {
-      DEBUG(dbgs() << "  Solipsize '" << Target->Code << "' type " << Type
+      DEBUG(dbgs() << "  Solipsize ' code size " << Target->Code.size() << "' type " << Type
                    << "\n");
       for (auto iter = Target->BranchesIn.begin();
            iter != Target->BranchesIn.end();) {
@@ -344,7 +399,7 @@ void RelooperAlgorithm::Calculate(Block *Entry) {
     }
 
     Shape *MakeSimple(BlockSet &Blocks, Block *Inner, BlockSet &NextEntries) {
-      DEBUG(dbgs() << "  MakeSimple inner block '" << Inner->Code << "'\n");
+      DEBUG(dbgs() << "  MakeSimple inner block ' size" << Inner->Code.size() << "' Inner->name " << Inner->name << " Blocks.size()=" << Blocks.size() << "\n");
       SimpleShape *Simple = new SimpleShape;
       Notice(Simple);
       Simple->Inner = Inner;
@@ -365,6 +420,7 @@ void RelooperAlgorithm::Calculate(Block *Entry) {
       // Find the inner blocks in this loop. Proceed backwards from the entries
       // until
       // you reach a seen block, collecting as you go.
+      DEBUG(dbgs() << "MakeLoop" << "\n");
       BlockSet InnerBlocks;
       BlockSet Queue = Entries;
       while (!Queue.empty()) {
@@ -415,6 +471,7 @@ void RelooperAlgorithm::Calculate(Block *Entry) {
     void FindIndependentGroups(BlockSet &Entries,
                                BlockBlockSetMap &IndependentGroups,
                                BlockSet *Ignore = nullptr) {
+      DEBUG(dbgs() << "FindIndependentGroups" << "\n");
       typedef std::map<Block *, Block *> BlockBlockMap;
 
       struct HelperClass {
@@ -425,6 +482,7 @@ void RelooperAlgorithm::Calculate(Block *Entry) {
         HelperClass(BlockBlockSetMap &IndependentGroupsInit)
             : IndependentGroups(IndependentGroupsInit) {}
         void InvalidateWithChildren(Block *New) {
+         DEBUG(dbgs() << "InvalidateWithChildren" << "\n");
           // Being in the list means you need to be invalidated
           BlockList ToInvalidate;
           ToInvalidate.push_back(New);
@@ -536,6 +594,7 @@ void RelooperAlgorithm::Calculate(Block *Entry) {
     Shape *MakeMultiple(BlockSet &Blocks, BlockSet &Entries,
                         BlockBlockSetMap &IndependentGroups, Shape *Prev,
                         BlockSet &NextEntries) {
+      DEBUG(dbgs() << "MakeMultiple" << "\n");
       bool Fused = isa<SimpleShape>(Prev);
       MultipleShape *Multiple = new MultipleShape();
       Notice(Multiple);
@@ -588,7 +647,11 @@ void RelooperAlgorithm::Calculate(Block *Entry) {
     // we avoid recursing on Next (imagine a long chain of Simples, if we
     // recursed we could blow the stack).
     Shape *Process(BlockSet &Blocks, BlockSet &InitialEntries, Shape *Prev) {
+      DEBUG(dbgs() << "Process" << "\n");
+      DEBUG(dbgs() << "blocks.size() " << Blocks.size() << "\n");
+      DEBUG(dbgs() << "InitialEntries.size() " << InitialEntries.size() << "\n");
       BlockSet *Entries = &InitialEntries;
+      DEBUG(dbgs() << "Entries->size() " << Entries->size() << "\n");
       BlockSet TempEntries[2];
       int CurrTempIndex = 0;
       BlockSet *NextEntries;
@@ -722,13 +785,17 @@ void RelooperAlgorithm::Calculate(Block *Entry) {
 
   // Main
 
+  
   BlockSet AllBlocks;
+  DEBUG(dbgs() << "inserting blocks into allblocks\n");
   for (const auto &Curr : Pre.Live) {
     AllBlocks.insert(Curr);
   }
 
   BlockSet Entries;
+  DEBUG(dbgs() << "inserting entry into entries\n");
   Entries.insert(Entry);
+  DEBUG(dbgs() << "calling analyzer::Process\nn");
   Root = Analyzer(this).Process(AllBlocks, Entries, nullptr);
   assert(Root);
 
@@ -745,6 +812,7 @@ void RelooperAlgorithm::Calculate(Block *Entry) {
                      std::function<void (SimpleShape*)> simple,
                      std::function<void (MultipleShape*)> multiple,
                      std::function<void (LoopShape*)> loop) {
+      DEBUG(dbgs() << "PostOptimizer::ShapeSwitch" << "\n");
       switch (var->getKind()) {
         case Shape::SK_Simple: {
           simple(cast<SimpleShape>(var));
@@ -765,6 +833,7 @@ void RelooperAlgorithm::Calculate(Block *Entry) {
     // Find the blocks that natural control flow can get us directly to, or
     // through a multiple that we ignore
     void FollowNaturalFlow(Shape *S, BlockSet &Out) {
+      DEBUG(dbgs() << "PostOptimizer::FollowNaturalFlow" << "\n");
       ShapeSwitch(S, [&](SimpleShape* Simple) {
         Out.insert(Simple->Inner);
       }, [&](MultipleShape* Multiple) {
@@ -778,6 +847,7 @@ void RelooperAlgorithm::Calculate(Block *Entry) {
     }
 
     void FindNaturals(Shape *Root, Shape *Otherwise = nullptr) {
+      DEBUG(dbgs() << "PostOptimizer::FindNaturals" << "\n");
       if (Root->Next) {
         Root->Natural = Root->Next;
         FindNaturals(Root->Next, Otherwise);
@@ -801,6 +871,7 @@ void RelooperAlgorithm::Calculate(Block *Entry) {
     void RemoveUnneededFlows(Shape *Root, Shape *Natural = nullptr,
                              LoopShape *LastLoop = nullptr,
                              unsigned Depth = 0) {
+      DEBUG(dbgs() << "PostOptimizer::RemoveUnneededFlows" << "\n");
       BlockSet NaturalBlocks;
       FollowNaturalFlow(Natural, NaturalBlocks);
       Shape *Next = Root;
@@ -810,13 +881,13 @@ void RelooperAlgorithm::Calculate(Block *Entry) {
         ShapeSwitch(
             Root,
             [&](SimpleShape* Simple) {
-              if (Simple->Inner->BranchVar)
+              if (!Simple->Inner->BranchVar.empty())
                 LastLoop =
                     nullptr; // a switch clears out the loop (TODO: only for
                              // breaks, not continue)
 
               if (Simple->Next) {
-                if (!Simple->Inner->BranchVar &&
+                if (Simple->Inner->BranchVar.empty() &&
                     Simple->Inner->ProcessedBranchesOut.size() == 2 &&
                     Depth < RelooperNestingLimit) {
                   // If there is a next block, we already know at Simple
@@ -907,6 +978,7 @@ void RelooperAlgorithm::Calculate(Block *Entry) {
     // After we know which loops exist, we can calculate which need to be
     // labeled
     void FindLabeledLoops(Shape *Root) {
+      DEBUG(dbgs() << "PostOptimizer::FindLabeledLoops" << "\n");
       Shape *Next = Root;
       while (Next) {
         Root = Next;
@@ -920,7 +992,7 @@ void RelooperAlgorithm::Calculate(Block *Entry) {
           // visit it now
           if (Fused && Fused->Breaks)
             LoopStack.push(Fused);
-          if (Simple->Inner->BranchVar)
+          if (!Simple->Inner->BranchVar.empty())
             LoopStack.push(nullptr); // a switch means breaks are now useless,
                                      // push a dummy
           if (Fused) {
@@ -950,7 +1022,7 @@ void RelooperAlgorithm::Calculate(Block *Entry) {
             }
             if (Fused && Fused->UseSwitch)
               LoopStack.pop();
-            if (Simple->Inner->BranchVar)
+            if (!Simple->Inner->BranchVar.empty())
               LoopStack.pop();
             if (Fused && Fused->Breaks)
               LoopStack.pop();
@@ -979,6 +1051,7 @@ void RelooperAlgorithm::Calculate(Block *Entry) {
     }
 
     void Process(Shape * Root) {
+      DEBUG(dbgs() << "PostOptimizer::Process" << "\n");
       FindNaturals(Root);
       RemoveUnneededFlows(Root);
       FindLabeledLoops(Root);
