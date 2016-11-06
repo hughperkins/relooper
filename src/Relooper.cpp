@@ -21,6 +21,13 @@
 
 #include "Relooper.h"
 #include "WebAssembly.h"
+#include "Branch.h"
+#include "Block.h"
+#include "Shape.h"
+#include "SimpleShape.h"
+#include "MultipleShape.h"
+#include "LoopShape.h"
+#include "LabeledShape.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/IR/CFG.h"
