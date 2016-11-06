@@ -21,23 +21,40 @@
 ///
 //===-------------------------------------------------------------------===//
 
-#pragma once
+// Block
 
-#include "LabeledShape.h"
+#include "Block.h"
+
+#include "Branch.h"
+
+#include "llvm/IR/Instruction.h"
+
+#include <memory>
 
 namespace llvm {
 namespace Relooper {
 
-///
-/// Loop: An infinite loop.
-///
-struct LoopShape : public LabeledShape {
-  Shape *Inner;
+Block::Block(std::string name)
+    : Parent(nullptr), Id(-1), IsCheckedMultipleEntry(false) {
+    this->name = name;
+  // FIXME: move from char* to LLVM data structures
+  // Code = strdup(CodeInit);
+  // BranchVar = BranchVarInit ? strdup(BranchVarInit) : nullptr;
+}
 
-  LoopShape() : LabeledShape(SK_Loop), Inner(nullptr) {}
+Block::~Block() {
+  // FIXME: move from char* to LLVM data structures
+  // free(static_cast<void *>(const_cast<char *>(Code)));
+  // free(static_cast<void *>(const_cast<char *>(BranchVar)));
+}
 
-  static bool classof(const Shape *S) { return S->getKind() == SK_Loop; }
-};
+void Block::AddBranchTo(Block *Target, const char *Condition,
+                        const std::vector<const llvm::Instruction*> *Code) {
+  assert(!contains(BranchesOut, Target) &&
+         "cannot add more than one branch to the same target");
 
-} // namespace Relooper
-} // namespace llvm
+  BranchesOut[Target] = make_unique<Branch>(Condition, Code);
+}
+
+} // Relooper
+} // llvm

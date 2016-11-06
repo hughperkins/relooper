@@ -23,21 +23,44 @@
 
 #pragma once
 
-#include "LabeledShape.h"
+#include "Shape.h"
+#include "Block.h"
+
+#include <deque>
 
 namespace llvm {
 namespace Relooper {
 
 ///
-/// Loop: An infinite loop.
+/// Implements the relooper algorithm for a function's blocks.
 ///
-struct LoopShape : public LabeledShape {
-  Shape *Inner;
+/// Implementation details: The Relooper instance has
+/// ownership of the blocks and shapes, and frees them when done.
+///
+struct RelooperAlgorithm {
+  std::deque<Block *> Blocks;
+  std::deque<Shape *> Shapes;
+  Shape *Root;
+  bool MinSize;
+  int BlockIdCounter;
+  int ShapeIdCounter;
 
-  LoopShape() : LabeledShape(SK_Loop), Inner(nullptr) {}
+  RelooperAlgorithm();
+  ~RelooperAlgorithm();
 
-  static bool classof(const Shape *S) { return S->getKind() == SK_Loop; }
+  void AddBlock(Block *New, int Id = -1);
+
+  // Calculates the shapes
+  void Calculate(Block *Entry);
+
+  // Sets us to try to minimize size
+  void SetMinSize(bool MinSize_) { MinSize = MinSize_; }
 };
 
-} // namespace Relooper
-} // namespace llvm
+struct RelooperRecursor {
+  RelooperAlgorithm *Parent;
+  RelooperRecursor(RelooperAlgorithm *ParentInit) : Parent(ParentInit) {}
+};
+
+} // Relooper
+} // llvm

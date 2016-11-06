@@ -23,21 +23,21 @@
 
 #pragma once
 
-#include "LabeledShape.h"
+#include "llvm/IR/Function.h"
+#include "llvm/Pass.h"
 
 namespace llvm {
 namespace Relooper {
 
-///
-/// Loop: An infinite loop.
-///
-struct LoopShape : public LabeledShape {
-  Shape *Inner;
-
-  LoopShape() : LabeledShape(SK_Loop), Inner(nullptr) {}
-
-  static bool classof(const Shape *S) { return S->getKind() == SK_Loop; }
+struct RelooperAnalysis final : public FunctionPass {
+  static char ID;
+  RelooperAnalysis() : FunctionPass(ID) {}
+  const char *getPassName() const override { return "relooper"; }
+  void getAnalysisUsage(AnalysisUsage &AU) const override {
+    AU.setPreservesAll();
+  }
+  bool runOnFunction(Function &F) override;
 };
 
-} // namespace Relooper
-} // namespace llvm
+} // Relooper
+} // llvm

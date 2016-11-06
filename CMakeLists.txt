@@ -13,7 +13,8 @@ set (LLVM_LIBS /usr/lib/llvm-3.8/lib/libLLVM.so)
 
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-rpath,$ORIGIN")
 
-add_library(relooper SHARED src/Relooper.cpp)
+add_library(relooper SHARED src/Relooper.cpp src/RelooperAlgorithm.cpp src/Block.cpp src/Branch.cpp
+    src/RelooperAnalysis.cpp)
 target_include_directories(relooper PRIVATE /usr/lib/llvm-3.8/include)
 set_target_properties(relooper PROPERTIES
     LINK_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${LLVM_LDFLAGS}"

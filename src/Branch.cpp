@@ -21,23 +21,28 @@
 ///
 //===-------------------------------------------------------------------===//
 
-#pragma once
+#include "Branch.h"
 
-#include "LabeledShape.h"
+// Branch
 
 namespace llvm {
 namespace Relooper {
 
-///
-/// Loop: An infinite loop.
-///
-struct LoopShape : public LabeledShape {
-  Shape *Inner;
+Branch::Branch(const char *ConditionInit, const std::vector<const llvm::Instruction*>  *CodeInit)
+    : Ancestor(nullptr), Labeled(true) {
+  // FIXME: move from char* to LLVM data structures
+  Condition = ConditionInit ? strdup(ConditionInit) : nullptr;
+  // Code = CodeInit ? strdup(CodeInit) : nullptr;
+  if(CodeInit != 0) {
+    Code = *CodeInit;
+  }
+}
 
-  LoopShape() : LabeledShape(SK_Loop), Inner(nullptr) {}
+Branch::~Branch() {
+  // FIXME: move from char* to LLVM data structures
+  // free(static_cast<void *>(const_cast<char *>(Condition)));
+  // free(static_cast<void *>(const_cast<char *>(Code)));
+}
 
-  static bool classof(const Shape *S) { return S->getKind() == SK_Loop; }
-};
-
-} // namespace Relooper
-} // namespace llvm
+} // Relooper
+} // llvm

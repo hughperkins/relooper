@@ -1,3 +1,5 @@
+// Copyright Alon Zakai 2011, Hugh Perkins 2016
+//
 //===-- WebAssembly.h - Top-level interface for WebAssembly  ----*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
